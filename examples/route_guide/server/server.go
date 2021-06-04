@@ -123,31 +123,49 @@ func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) e
 // RouteChat receives a stream of message/location pairs, and responds with a stream of all
 // previous messages at each of those locations.
 func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error {
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			return nil
+	buffer := make(chan *pb.RouteNote, 10000)
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			start := time.Now()
+			in, err := stream.Recv()
+			if err == io.EOF {
+				errCh <- nil
+				return
+			}
+			if err != nil {
+				errCh <- err
+				return
+			}
+			end := time.Now()
+			delta := end.Sub(start)
+			fmt.Printf("Receive Delta: %+v\n", delta)
+			buffer <- in
 		}
-		if err != nil {
-			return err
-		}
-		key := serialize(in.Location)
+	}()
+	go func() {
+		for {
+			in := <-buffer
+			key := serialize(in.Location)
 
-		s.mu.Lock()
-		s.routeNotes[key] = append(s.routeNotes[key], in)
-		// Note: this copy prevents blocking other clients while serving this one.
-		// We don't need to do a deep copy, because elements in the slice are
-		// insert-only and never modified.
-		rn := make([]*pb.RouteNote, len(s.routeNotes[key]))
-		copy(rn, s.routeNotes[key])
-		s.mu.Unlock()
+			s.mu.Lock()
+			s.routeNotes[key] = append(s.routeNotes[key], in)
+			// Note: this copy prevents blocking other clients while serving this one.
+			// We don't need to do a deep copy, because elements in the slice are
+			// insert-only and never modified.
+			rn := make([]*pb.RouteNote, len(s.routeNotes[key]))
+			copy(rn, s.routeNotes[key])
+			s.mu.Unlock()
 
-		for _, note := range rn {
-			if err := stream.Send(note); err != nil {
-				return err
+			for _, note := range rn {
+				if err := stream.Send(note); err != nil {
+					errCh <- err
+				}
 			}
 		}
-	}
+	}()
+	err := <-errCh
+	return err
 }
 
 // loadFeatures loads features from a JSON file.

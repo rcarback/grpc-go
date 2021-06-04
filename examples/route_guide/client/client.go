@@ -24,9 +24,12 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
+	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"time"
 
@@ -104,15 +107,56 @@ func runRecordRoute(client pb.RouteGuideClient) {
 	log.Printf("Route summary: %v", reply)
 }
 
+// readUint32 reads an integer from an io.Reader (which should be a CSPRNG)
+func readUint32(rng io.Reader) uint32 {
+	var rndBytes [4]byte
+	i, err := rng.Read(rndBytes[:])
+	if i != 4 || err != nil {
+		panic(fmt.Sprintf("cannot read from rng: %+v", err))
+	}
+	return binary.BigEndian.Uint32(rndBytes[:])
+}
+
+// readRangeUint32 reduces an integer from 0, MaxUint32 to the range start, end
+func readRangeUint32(start, end uint32, rng io.Reader) uint32 {
+	size := end - start
+	// note we could just do the part inside the () here, but then extra
+	// can == size which means a little bit of range is wastes, either
+	// choice seems negligible so we went with the "more correct"
+	extra := (math.MaxUint32%size + 1) % size
+	limit := math.MaxUint32 - extra
+	// Loop until we read something inside the limit
+	for {
+		res := readUint32(rng)
+		if res > limit {
+			continue
+		}
+		return (res % size) + start
+	}
+}
+
+func genRandString(size int) string {
+	alphabet := string("abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()")
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	res := make([]byte, size)
+	for i := 0; i < size; i++ {
+		res[i] = alphabet[readRangeUint32(0, uint32(len(alphabet)), rng)]
+	}
+	return string(res)
+}
+
 // runRouteChat receives a sequence of route notes, while sending notes for various locations.
 func runRouteChat(client pb.RouteGuideClient) {
-	notes := []*pb.RouteNote{
-		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "First message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "Second message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "Third message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 1}, Message: "Fourth message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 2}, Message: "Fifth message"},
-		{Location: &pb.Point{Latitude: 0, Longitude: 3}, Message: "Sixth message"},
+	numNotes := 1024
+	notes := make([]*pb.RouteNote, numNotes)
+	for i := 0; i < numNotes; i++ {
+		notes[i] = &pb.RouteNote{
+			Location: &pb.Point{
+				Latitude:  0 + int32(i),
+				Longitude: 1 + int32(i),
+			},
+			Message: genRandString(1024),
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

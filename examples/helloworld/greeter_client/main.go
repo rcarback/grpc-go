@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"google.golang.org/grpc/keepalive"
 
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
@@ -34,25 +35,55 @@ const (
 	defaultName = "world"
 )
 
-func main() {
+// KaClientOpts are the keepalive options for clients
+// TODO: Set via configuration
+var KaClientOpts = keepalive.ClientParameters{
+	// Wait 1s before pinging to keepalive
+	Time: 1 * time.Second,
+	// 2s after ping before closing
+	Timeout: 2 * time.Second,
+	// For all connections, streaming and nonstreaming
+	PermitWithoutStream: true,
+}
+
+
+func sendmsg() {
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(address, grpc.WithInsecure(), grpc.WithBlock())
+	ctx, cancel := context.WithTimeout(context.Background(),
+		10*time.Second)
+
+	conn, err := grpc.DialContext(ctx, address, grpc.WithInsecure(), grpc.WithBlock(),
+		grpc.WithKeepaliveParams(KaClientOpts))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
+	cancel()
 	defer conn.Close()
-	c := pb.NewGreeterClient(conn)
+	for i := 0; i < 5; i++ {
+		go func() {
+			c := pb.NewGreeterClient(conn)
 
-	// Contact the server and print out its response.
-	name := defaultName
-	if len(os.Args) > 1 {
-		name = os.Args[1]
+			// Contact the server and print out its response.
+			name := defaultName
+			if len(os.Args) > 1 {
+				name = os.Args[1]
+			}
+			ctx, cancel = context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			r, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
+			if err != nil {
+				log.Fatalf("could not greet: %v", err)
+			}
+			log.Printf("Greeting: %s", r.GetMessage())
+		}
+		time.Sleep(5*time.Second)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	r, err := c.SayHello(ctx, &pb.HelloRequest{Name: name})
-	if err != nil {
-		log.Fatalf("could not greet: %v", err)
+}
+
+
+func main() {
+	for {
+		go sendmsg()
+		time.Sleep(5*time.Second)
 	}
-	log.Printf("Greeting: %s", r.GetMessage())
 }
