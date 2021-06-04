@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"google.golang.org/grpc/keepalive"
 	"io"
 	"io/ioutil"
 	"log"
@@ -235,13 +236,51 @@ func newServer() *routeGuideServer {
 	return s
 }
 
+const infinityTime = time.Duration(math.MaxInt64)
+
+// MaxConcurrentStreams is the number of server-side streams to allow open
+var MaxConcurrentStreams = uint32(250000)
+
+// KaOpts are Keepalive options for servers
+var KaOpts = keepalive.ServerParameters{
+	// Idle for at most 60s
+	MaxConnectionIdle: 60 * time.Second,
+	// Reset after an hour
+	MaxConnectionAge: 1 * time.Hour,
+	// w/ 1m grace shutdown
+	MaxConnectionAgeGrace: 1 * time.Minute,
+	// Never ping to keepalive
+	Time: infinityTime,
+	// Close connection 60 seconds after ping
+	Timeout: 60 * time.Second,
+}
+
+// KaEnforcement are keepalive enforcement options for servers
+var KaEnforcement = keepalive.EnforcementPolicy{
+	// Client should never send keep alive ping
+	MinTime: infinityTime,
+	// Doing KA on non-streams is OK
+	PermitWithoutStream: true,
+}
+
+const MaxWindowSize = math.MaxInt32
+
 func main() {
 	flag.Parse()
-	lis, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", *port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	var opts []grpc.ServerOption
+	opts := []grpc.ServerOption{
+		grpc.MaxConcurrentStreams(MaxConcurrentStreams),
+		grpc.MaxRecvMsgSize(math.MaxInt32),
+		grpc.KeepaliveParams(KaOpts),
+		grpc.KeepaliveEnforcementPolicy(KaEnforcement),
+		grpc.InitialConnWindowSize(MaxWindowSize),
+		grpc.InitialWindowSize(MaxWindowSize),
+		grpc.ReadBufferSize(4 * 1024 * 1024),
+		grpc.WriteBufferSize(4 * 1024 * 1024),
+	}
 	if *tls {
 		if *certFile == "" {
 			*certFile = testdata.Path("server1.pem")

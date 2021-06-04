@@ -27,6 +27,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"google.golang.org/grpc/keepalive"
 	"io"
 	"log"
 	"math"
@@ -194,6 +195,19 @@ func randomPoint(r *rand.Rand) *pb.Point {
 	return &pb.Point{Latitude: lat, Longitude: long}
 }
 
+const infinityTime = time.Duration(math.MaxInt64)
+
+// KaClientOpts are the keepalive options for clients
+// TODO: Set via configuration
+var KaClientOpts = keepalive.ClientParameters{
+	// Never ping to keepalive
+	Time: infinityTime,
+	// 60s after ping before closing
+	Timeout: 60 * time.Minute,
+	// For all connections, with and without streaming
+	PermitWithoutStream: true,
+}
+
 func main() {
 	flag.Parse()
 	var opts []grpc.DialOption
@@ -211,6 +225,11 @@ func main() {
 	}
 
 	opts = append(opts, grpc.WithBlock())
+	opts = append(opts, grpc.WithKeepaliveParams(KaClientOpts))
+	opts = append(opts, grpc.WithReadBufferSize(4*1024*1024))
+	opts = append(opts, grpc.WithWriteBufferSize(4*1024*1024))
+	opts = append(opts, grpc.WithInitialWindowSize(math.MaxInt32))
+	opts = append(opts, grpc.WithInitialConnWindowSize(math.MaxInt32))
 	conn, err := grpc.Dial(*serverAddr, opts...)
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
