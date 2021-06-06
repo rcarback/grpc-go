@@ -225,11 +225,11 @@ func main() {
 	}
 
 	opts = append(opts, grpc.WithBlock())
-	opts = append(opts, grpc.WithKeepaliveParams(KaClientOpts))
-	opts = append(opts, grpc.WithReadBufferSize(4*1024*1024))
-	opts = append(opts, grpc.WithWriteBufferSize(4*1024*1024))
-	opts = append(opts, grpc.WithInitialWindowSize(math.MaxInt32))
-	opts = append(opts, grpc.WithInitialConnWindowSize(math.MaxInt32))
+	// opts = append(opts, grpc.WithKeepaliveParams(KaClientOpts))
+	// opts = append(opts, grpc.WithReadBufferSize(4*1024*1024))
+	// opts = append(opts, grpc.WithWriteBufferSize(4*1024*1024))
+	// opts = append(opts, grpc.WithInitialWindowSize(10*1024*1024))
+	// opts = append(opts, grpc.WithInitialConnWindowSize(10*1024*1024))
 	conn, err := grpc.Dial(*serverAddr, opts...)
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
@@ -249,9 +249,12 @@ func main() {
 		Hi: &pb.Point{Latitude: 420000000, Longitude: -730000000},
 	})
 
-	// RecordRoute
-	runRecordRoute(client)
+	// // RecordRoute
+	// runRecordRoute(client)
 
 	// RouteChat
-	runRouteChat(client)
+	for i := 0; i < 100; i++ {
+		runRouteChat(client)
+		time.Sleep(7 * time.Second)
+	}
 }

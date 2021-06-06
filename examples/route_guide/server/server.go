@@ -126,9 +126,10 @@ func (s *routeGuideServer) RecordRoute(stream pb.RouteGuide_RecordRouteServer) e
 func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error {
 	buffer := make(chan *pb.RouteNote, 10000)
 	errCh := make(chan error, 1)
+	startOfRun := time.Now()
 	go func() {
 		for {
-			start := time.Now()
+			// start := time.Now()
 			in, err := stream.Recv()
 			if err == io.EOF {
 				errCh <- nil
@@ -138,9 +139,10 @@ func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error
 				errCh <- err
 				return
 			}
-			end := time.Now()
-			delta := end.Sub(start)
-			fmt.Printf("Receive Delta: %+v\n", delta)
+			// end := time.Now()
+			// delta := end.Sub(start)
+			// fmt.Printf("RECV: %f\n", float64(time.Now().UnixNano())/1000000.0)
+			// fmt.Printf("Receive Delta: %+v\n", float64(delta.Nanoseconds())/1000000.0)
 			buffer <- in
 		}
 	}()
@@ -166,6 +168,8 @@ func (s *routeGuideServer) RouteChat(stream pb.RouteGuide_RouteChatServer) error
 		}
 	}()
 	err := <-errCh
+	endOfRun := time.Now().Sub(startOfRun)
+	fmt.Printf("FINAL COUNTDOWN: %+v\n\n\n\n", float64(endOfRun.Nanoseconds())/1000000.0)
 	return err
 }
 
@@ -272,14 +276,14 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	opts := []grpc.ServerOption{
-		grpc.MaxConcurrentStreams(MaxConcurrentStreams),
-		grpc.MaxRecvMsgSize(math.MaxInt32),
-		grpc.KeepaliveParams(KaOpts),
-		grpc.KeepaliveEnforcementPolicy(KaEnforcement),
-		grpc.InitialConnWindowSize(MaxWindowSize),
-		grpc.InitialWindowSize(MaxWindowSize),
-		grpc.ReadBufferSize(4 * 1024 * 1024),
-		grpc.WriteBufferSize(4 * 1024 * 1024),
+		// grpc.MaxConcurrentStreams(MaxConcurrentStreams),
+		// grpc.MaxRecvMsgSize(math.MaxInt32),
+		// grpc.KeepaliveParams(KaOpts),
+		// grpc.KeepaliveEnforcementPolicy(KaEnforcement),
+		// grpc.InitialConnWindowSize(10*1024*1024),
+		// grpc.InitialWindowSize(10*1024*1024),
+		// grpc.ReadBufferSize(10 * 1024 * 1024),
+		// grpc.WriteBufferSize(10 * 1024 * 1024),
 	}
 	if *tls {
 		if *certFile == "" {
