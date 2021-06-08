@@ -34,10 +34,13 @@ import (
 	"math/rand"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	pb "google.golang.org/grpc/examples/route_guide/routeguide"
 	"google.golang.org/grpc/testdata"
+	"net"
+	"syscall"
 )
 
 var (
@@ -208,6 +211,62 @@ var KaClientOpts = keepalive.ClientParameters{
 	PermitWithoutStream: true,
 }
 
+func TestCustomDialerOption(ctx context.Context, addr string) (net.Conn, error) {
+	control := func(network, address string, c syscall.RawConn) error {
+		fmt.Printf("DOING THING 1\n")
+		var syscallErr error
+		controlErr := c.Control(func(fd uintptr) {
+			syscallErr = syscall.SetsockoptInt(
+				int(fd), syscall.IPPROTO_TCP,
+				unix.SO_RCVBUF,
+				8*1024*1024)
+		})
+		if syscallErr != nil {
+			fmt.Printf("syscall: %+v\n", syscallErr)
+			return syscallErr
+		}
+		if controlErr != nil {
+			fmt.Printf("control: %+v\n", controlErr)
+			return controlErr
+		}
+		fmt.Printf("DOING THING 2\n")
+		controlErr = c.Control(func(fd uintptr) {
+			syscallErr = syscall.SetsockoptInt(
+				int(fd), syscall.SOL_SOCKET,
+				unix.SO_SNDBUF,
+				8*1024*1024)
+		})
+		if syscallErr != nil {
+			fmt.Printf("syscall: %+v\n", syscallErr)
+			return syscallErr
+		}
+		if controlErr != nil {
+			fmt.Printf("control: %+v\n", controlErr)
+			return controlErr
+		}
+		fmt.Printf("DOING THING 3\n")
+		controlErr = c.Control(func(fd uintptr) {
+			syscallErr = syscall.SetsockoptInt(
+				int(fd), syscall.IPPROTO_TCP,
+				unix.TCP_WINDOW_CLAMP,
+				4*1024*1024)
+		})
+		if syscallErr != nil {
+			fmt.Printf("syscall %+v\n", syscallErr)
+			return syscallErr
+		}
+		if controlErr != nil {
+			fmt.Printf("control %+v\n", controlErr)
+			return controlErr
+		}
+		return nil
+	}
+	d := &net.Dialer{
+		Control: control,
+	}
+	return d.DialContext(ctx, "tcp", addr)
+}
+
 func main() {
 	flag.Parse()
 	var opts []grpc.DialOption
@@ -224,7 +283,8 @@ func main() {
 		opts = append(opts, grpc.WithInsecure())
 	}
 
-	opts = append(opts, grpc.WithBlock())
+	opts = append(opts, grpc.WithBlock(),
+		grpc.WithContextDialer(TestCustomDialerOption))
 	// opts = append(opts, grpc.WithKeepaliveParams(KaClientOpts))
 	// opts = append(opts, grpc.WithReadBufferSize(4*1024*1024))
 	// opts = append(opts, grpc.WithWriteBufferSize(4*1024*1024))
@@ -235,6 +295,7 @@ func main() {
 		log.Fatalf("fail to dial: %v", err)
 	}
 	defer conn.Close()
+
 	client := pb.NewRouteGuideClient(conn)
 
 	// Looking for a valid feature
